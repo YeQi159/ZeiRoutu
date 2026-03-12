@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 蓝牙监控端</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>ESP32-S3 设备连接</h1>
+            <p>基于 Web Bluetooth API 的设备监控面板</p>
+        </header>
+
+        <main>
+            <section class="card connection-panel">
+                <h2>设备连接</h2>
+                <div class="input-group">
+                    <label for="deviceName">设备名称过滤 (可选):</label>
+                    <input type="text" id="deviceName" placeholder="例如: My_Device 或留空">
+                </div>
+                <div class="input-group">
+                    <label for="serviceUuid">服务 UUID:</label>
+                    <input type="text" id="serviceUuid" placeholder="例如: 180F 或完整 UUID">
+                </div>
+                <div class="input-group">
+                    <label for="charUuid">特征值 UUID:</label>
+                    <input type="text" id="charUuid" placeholder="例如: 2A19 或完整 UUID">
+                </div>
+                <div class="actions">
+                    <button id="connectBtn" class="btn primary">连接设备</button>
+                    <button id="disconnectBtn" class="btn secondary" disabled>断开连接</button>
+                </div>
+                <div id="status" class="status-msg">未连接</div>
+            </section>
+
+            <section class="card data-panel">
+                <h2>数据监控</h2>
+                <div class="data-display">
+                    <div class="data-item">
+                        <span class="label">接收数据:</span>
+                        <span id="receivedData" class="value">-</span>
+                    </div>
+                </div>
+                <div class="actions">
+                    <button id="readBtn" class="btn" disabled>读取数据</button>
+                    <button id="notifyBtn" class="btn" disabled>开启/关闭通知</button>
+                </div>
+            </section>
+
+            <section class="card write-panel">
+                <h2>发送数据</h2>
+                <div class="input-group">
+                    <input type="text" id="sendDataInput" placeholder="输入要发送的数据(十六进制或字符串)">
+                </div>
+                <div class="radio-group">
+                    <label><input type="radio" name="dataType" value="string" checked> 字符串</label>
+                    <label><input type="radio" name="dataType" value="hex"> 十六进制</label>
+                </div>
+                <div class="actions">
+                    <button id="sendBtn" class="btn" disabled>发送数据</button>
+                </div>
+            </section>
+
+            <section class="card log-panel">
+                <h2>操作日志</h2>
+                <div id="logArea" class="log-area"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(registration => {
+                    console.log('ServiceWorker 注册成功:', registration.scope);
+                }).catch(error => {
+                    console.log('ServiceWorker 注册失败:', error);
+                });
+            });
+        }
+    </script>
+</body>
+
+</html>

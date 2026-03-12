@@ -1,16 +1,23 @@
 {
-    "name": "ESP32-S3 BLE Dashboard",
-    "short_name": "ESP32 BLE",
-    "description": "基于 Web Bluetooth 的 ESP32-S3 设备监控面板",
-    "start_url": "index.html",
+    "name": "厨房智能助手",
+    "short_name": "厨房助手",
+    "description": "基于 STM32 与 ESP32 的智能厨房环境监控客户端，支持蓝牙与Wi-Fi直连。",
+    "start_url": "./index.html",
     "display": "standalone",
-    "background_color": "#ffffff",
-    "theme_color": "#007bff",
+    "background_color": "#f0f5ef",
+    "theme_color": "#22c55e",
     "icons": [
         {
             "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibHVlIiBzdHJva2Utd2lkdGg9IjIiPjxwb2x5bGluZSBwb2ludHM9IjcuNSAxNyAxNyA3IDEyIDIgMTIgMjIgMTcgMTcgNy41IDciLz48L3N2Zz4=",
             "sizes": "192x192",
-            "type": "image/svg+xml"
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJibHVlIiBzdHJva2Utd2lkdGg9IjIiPjxwb2x5bGluZSBwb2ludHM9IjcuNSAxNyAxNyA3IDEyIDIgMTIgMjIgMTcgMTcgNy41IDciLz48L3N2Zz4=",
+            "sizes": "512x512",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
         }
     ]
 }

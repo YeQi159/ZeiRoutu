@@ -1,222 +1,237 @@
+const loginScreen = document.getElementById('loginScreen');
+const mainScreen = document.getElementById('mainScreen');
+const loginErr = document.getElementById('loginErr');
+
+// UI Elements
+const valTemp = document.getElementById('valTemp');
+const valHumi = document.getElementById('valHumi');
+const valGas = document.getElementById('valGas');
+const valIR = document.getElementById('valIR');
+
+const barTemp = document.getElementById('barTemp');
+const barHumi = document.getElementById('barHumi');
+const barGas = document.getElementById('barGas');
+const barIR = document.getElementById('barIR');
+
+const btnBuzzer = document.getElementById('btnBuzzer');
+const btnServo = document.getElementById('btnServo');
+const btnMotor = document.getElementById('btnMotor');
+
+let isConnected = false;
+let startTime = Date.now();
+let updateCount = 0;
+let connectionType = ''; // 'ble' or 'wifi'
+let pollTimer = null;
+
+// ==========================================
+// BLE Variables
+// ==========================================
 let bluetoothDevice;
-let customService;
-let customCharacteristic;
-let isNotifying = false;
+let customCharacteristicTX; // To receive from ESP
+let customCharacteristicRX; // To send to ESP
+const SERVICE_UUID = 0xFFE0;
+const CHAR_RX_UUID = 0xFFE1;
+const CHAR_TX_UUID = 0xFFE2;
 
-// DOM Elements
-const connectBtn = document.getElementById('connectBtn');
-const disconnectBtn = document.getElementById('disconnectBtn');
-const statusDiv = document.getElementById('status');
-const deviceNameInput = document.getElementById('deviceName');
-const serviceUuidInput = document.getElementById('serviceUuid');
-const charUuidInput = document.getElementById('charUuid');
-const readBtn = document.getElementById('readBtn');
-const notifyBtn = document.getElementById('notifyBtn');
-const receivedDataSpan = document.getElementById('receivedData');
-const logArea = document.getElementById('logArea');
-const sendBtn = document.getElementById('sendBtn');
-const sendDataInput = document.getElementById('sendDataInput');
-
-// Utility: Logging
-function log(msg) {
-    console.log(msg);
-    const div = document.createElement('div');
-    const time = new Date().toLocaleTimeString();
-    div.textContent = `[${time}] ${msg}`;
-    logArea.appendChild(div);
-    logArea.scrollTop = logArea.scrollHeight;
-}
-
-// Utility: parse UUID
-function parseUUID(uuidStr) {
-    uuidStr = uuidStr.trim().toLowerCase();
-    if (/^[0-9a-f]{4}$/.test(uuidStr)) {
-        return parseInt(uuidStr, 16);
-    }
-    return uuidStr;
-}
-
-// Connect to Device
-connectBtn.addEventListener('click', async () => {
+// ==========================================
+// Connection Handlers
+// ==========================================
+document.getElementById('loginBtnBle').addEventListener('click', async () => {
     try {
-        if (!navigator.bluetooth) {
-            log("Error: 当前浏览器不支持 Web Bluetooth API");
-            return;
-        }
+        loginErr.style.opacity = 0;
 
-        const devName = deviceNameInput.value.trim();
-        const svcStr = serviceUuidInput.value.trim() || '180f'; // Default 180F Battery
-        const svcUUID = parseUUID(svcStr);
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+            filters: [{ name: "Kitchen_Assistant" }],
+            optionalServices: [SERVICE_UUID]
+        });
 
-        let options = {
-            optionalServices: [svcUUID]
-        };
-
-        if (devName) {
-            log(`请求蓝牙设备，名称过滤: ${devName}`);
-            options.filters = [{ name: devName }];
-        } else {
-            log(`请求蓝牙设备，服务 UUID 过滤: ${svcUUID}`);
-            options.filters = [{ services: [svcUUID] }];
-        }
-
-        // Request device
-        bluetoothDevice = await navigator.bluetooth.requestDevice(options);
-
-        log(`连接到设备: ${bluetoothDevice.name}`);
         bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+        updateConnection(false, 'BLE 连接中...');
 
-        // Connect GATT server
         const server = await bluetoothDevice.gatt.connect();
-        log('GATT 服务器连接成功');
+        const service = await server.getPrimaryService(SERVICE_UUID);
 
-        // Get Service
-        customService = await server.getPrimaryService(svcUUID);
-        log('获取到服务');
+        // Receive Char
+        customCharacteristicTX = await service.getCharacteristic(CHAR_TX_UUID);
+        await customCharacteristicTX.startNotifications();
+        customCharacteristicTX.addEventListener('characteristicvaluechanged', (e) => {
+            const value = e.target.value;
+            // 简单处理：将收到的字节数据传递给解析器
+            parseDataBytes(value);
+        });
 
-        // Get Characteristic
-        const charStr = charUuidInput.value.trim() || '2a19'; // Default 2A19 Battery Level
-        const charUUID = parseUUID(charStr);
-        customCharacteristic = await customService.getCharacteristic(charUUID);
-        log('获取到特征值');
+        // Send Char
+        customCharacteristicRX = await service.getCharacteristic(CHAR_RX_UUID);
 
-        // Setup Notifications if supported
-        if (customCharacteristic.properties.notify || customCharacteristic.properties.indicate) {
-            customCharacteristic.addEventListener('characteristicvaluechanged', handleNotifications);
-            log('特征值支持通知/指示，可以开启');
-        }
-
-        updateUI(true);
-        log('设备准备就绪');
+        connectionType = 'ble';
+        enterMainScreen('蓝牙 (BLE) 已连接');
     } catch (error) {
-        log(`连接错误: ${error}`);
-        updateUI(false);
+        showLoginError("蓝牙连接失败: " + error.message);
     }
 });
 
-// Disconnect
-disconnectBtn.addEventListener('click', () => {
-    if (bluetoothDevice && bluetoothDevice.gatt.connected) {
-        bluetoothDevice.gatt.disconnect();
-    }
+document.getElementById('loginBtnWifi').addEventListener('click', () => {
+    // Check if we can reach the local AP
+    fetch('http://192.168.4.1/api/status', { method: 'GET', mode: 'no-cors' })
+        .then(() => {
+            connectionType = 'wifi';
+            enterMainScreen('Wi-Fi 已连接');
+            pollTimer = setInterval(pollWifiData, 2000);
+        })
+        .catch(e => {
+            // Even if no-cors fails or network error, let's allow it for testing in real app
+            // In a real WebView, you might just enforce the connection.
+            connectionType = 'wifi';
+            enterMainScreen('局域网 (Wi-Fi) 请求中');
+            pollTimer = setInterval(pollWifiData, 2000);
+        });
 });
+
+function enterMainScreen(statusMsg) {
+    loginScreen.style.opacity = 0;
+    setTimeout(() => {
+        loginScreen.style.display = 'none';
+        mainScreen.classList.remove('hidden');
+        isConnected = true;
+        updateConnection(true, statusMsg);
+        setInterval(updateFooter, 1000);
+    }, 400);
+}
+
+function showLoginError(msg) {
+    loginErr.innerText = msg;
+    loginErr.style.opacity = 1;
+    loginScreen.querySelector('.apple-modal').classList.add('shake');
+    setTimeout(() => {
+        loginScreen.querySelector('.apple-modal').classList.remove('shake');
+    }, 400);
+}
 
 function onDisconnected() {
-    log('设备已断开连接');
-    updateUI(false);
-    isNotifying = false;
-    notifyBtn.textContent = '开启通知';
+    updateConnection(false, '连接已断开');
+    isConnected = false;
+    if (pollTimer) clearInterval(pollTimer);
 }
 
-// Update UI State
-function updateUI(connected) {
-    connectBtn.disabled = connected;
-    disconnectBtn.disabled = !connected;
-    serviceUuidInput.disabled = connected;
-    charUuidInput.disabled = connected;
-    readBtn.disabled = !connected;
-    notifyBtn.disabled = !connected;
-    sendBtn.disabled = !connected;
+// ==========================================
+// Data Parsing & UI Update
+// ==========================================
+function parseDataBytes(dataView) {
+    // 假设 STM32 发送的格式为: [0xAA, Temp, Humi, Gas, IR]
+    if (dataView.byteLength >= 5 && dataView.getUint8(0) === 0xAA) {
+        const temp = dataView.getUint8(1);
+        const humi = dataView.getUint8(2);
+        const gas = dataView.getUint8(3) * 10; // 假数据计算
+        const ir = dataView.getUint8(4);
 
-    statusDiv.textContent = connected ? '已连接' : '未连接';
-    statusDiv.className = connected ? 'status-msg connected' : 'status-msg';
+        updateUI(temp, humi, gas, ir);
+    }
 }
 
-// Read Data
-readBtn.addEventListener('click', async () => {
-    if (!customCharacteristic) return;
-    try {
-        log('正在读取数据...');
-        const value = await customCharacteristic.readValue();
-        handleData(value);
-    } catch (error) {
-        log(`读取错误: ${error}`);
-    }
-});
+function updateUI(temp, humi, gas, ir) {
+    updateCount++;
+    document.getElementById('valCount').innerText = updateCount;
 
-// Toggle Notifications
-notifyBtn.addEventListener('click', async () => {
-    if (!customCharacteristic) return;
-    try {
-        if (!isNotifying) {
-            log('开启通知...');
-            await customCharacteristic.startNotifications();
-            isNotifying = true;
-            notifyBtn.textContent = '停止通知';
-            log('通知已开启');
-        } else {
-            log('停止通知...');
-            await customCharacteristic.stopNotifications();
-            isNotifying = false;
-            notifyBtn.textContent = '开启通知';
-            log('通知已停止');
-        }
-    } catch (error) {
-        log(`通知错误: ${error}`);
-    }
-});
+    valTemp.innerText = temp.toFixed(1);
+    valHumi.innerText = humi.toFixed(1);
+    valGas.innerText = gas;
 
-// Handle incoming data
-function handleNotifications(event) {
-    const value = event.target.value;
-    handleData(value);
-}
-
-function handleData(dataView) {
-    // Process the dataview as Hex and String
-    let hexString = [];
-    let textStr = "";
-    for (let i = 0; i < dataView.byteLength; i++) {
-        const val = dataView.getUint8(i);
-        hexString.push(val.toString(16).padStart(2, '0').toUpperCase());
-        textStr += String.fromCharCode(val);
-    }
-
-    receivedDataSpan.textContent = `HEX: ${hexString.join(' ')} | 文本: ${textStr}`;
-    log(`收到数据: ${hexString.join(' ')}`);
-}
-
-// Send Data
-sendBtn.addEventListener('click', async () => {
-    if (!customCharacteristic) return;
-
-    const inputStr = sendDataInput.value.trim();
-    if (!inputStr) {
-        log('发送数据为空');
-        return;
-    }
-
-    const dataType = document.querySelector('input[name="dataType"]:checked').value;
-    let dataBuffer;
-
-    if (dataType === 'string') {
-        const encoder = new TextEncoder();
-        dataBuffer = encoder.encode(inputStr);
+    if (ir > 0) {
+        valIR.innerText = "有人";
+        valIR.style.color = "#dc2626";
+        barIR.style.width = "100%";
+        barIR.style.background = "#dc2626";
     } else {
-        // Hex String (e.g., "0A 1B 2C" or "0a1b2c")
-        const hexStr = inputStr.replace(/[^0-9A-Fa-f]/g, '');
-        if (hexStr.length % 2 !== 0) {
-            log('十六进制数据长度无效');
-            return;
-        }
-        dataBuffer = new Uint8Array(hexStr.length / 2);
-        for (let i = 0; i < hexStr.length; i += 2) {
-            dataBuffer[i / 2] = parseInt(hexStr.substring(i, i + 2), 16);
-        }
+        valIR.innerText = "无人";
+        valIR.style.color = "#4f46e5";
+        barIR.style.width = "0%";
     }
 
-    try {
-        log(`正在发送数据...`);
-        if (customCharacteristic.properties.write) {
-            await customCharacteristic.writeValue(dataBuffer);
-        } else if (customCharacteristic.properties.writeWithoutResponse) {
-            await customCharacteristic.writeValueWithoutResponse(dataBuffer);
-        } else {
-            log('该特征值不支持写入');
-            return;
-        }
-        log(`发送成功`);
-    } catch (error) {
-        log(`发送失败: ${error}`);
+    barTemp.style.width = calcBar(temp, -10, 50) + '%';
+    barHumi.style.width = calcBar(humi, 0, 100) + '%';
+    barGas.style.width = calcBar(gas, 0, 1000) + '%';
+}
+
+function pollWifiData() {
+    if (!isConnected || connectionType !== 'wifi') return;
+
+    // 向 ESP32 的局域网 IP 发送请求 (需在 ESP32 上实现 HTTP 服务器)
+    fetch('http://192.168.4.1/api/data')
+        .then(r => r.json())
+        .then(d => {
+            updateConnection(true, 'Wi-Fi 接收中');
+            updateUI(d.temp, d.humi, d.gas, d.ir);
+        })
+        .catch(e => {
+            updateConnection(false, 'Wi-Fi 数据超时');
+        });
+}
+
+// ==========================================
+// Commands Sending
+// ==========================================
+async function sendCommand(cmdStr) {
+    if (connectionType === 'ble' && customCharacteristicRX) {
+        let encoder = new TextEncoder('utf-8');
+        await customCharacteristicRX.writeValue(encoder.encode(cmdStr + '\n'));
+        console.log("BLE Sent:", cmdStr);
+    } else if (connectionType === 'wifi') {
+        fetch('http://192.168.4.1/api/command', {
+            method: 'POST',
+            body: cmdStr
+        }).then(() => console.log("WiFi Sent:", cmdStr)).catch(e => console.error(e));
     }
-});
+}
+
+function handleToggleButton(btn, cmdPrefix) {
+    let state = btn.getAttribute('data-state');
+    if (state === "0") {
+        btn.setAttribute('data-state', "1");
+        btn.innerText = "开启中";
+        sendCommand(cmdPrefix + ":1");
+    } else {
+        btn.setAttribute('data-state', "0");
+        btn.innerText = "关闭";
+        sendCommand(cmdPrefix + ":0");
+    }
+}
+
+btnBuzzer.addEventListener('click', () => handleToggleButton(btnBuzzer, 'LED'));
+btnServo.addEventListener('click', () => handleToggleButton(btnServo, 'SERVO'));
+btnMotor.addEventListener('click', () => handleToggleButton(btnMotor, 'MOTOR'));
+
+// ==========================================
+// Utilities
+// ==========================================
+function updateConnection(online, msg) {
+    const b = document.getElementById('statusBadge');
+    const t = document.getElementById('statusText');
+    if (online) {
+        b.className = 'status-badge online';
+        t.innerText = msg;
+    } else {
+        b.className = 'status-badge offline';
+        t.innerText = msg;
+    }
+}
+
+function calcBar(val, min, max) {
+    let p = ((val - min) / (max - min)) * 100;
+    return Math.max(0, Math.min(100, p));
+}
+
+function updateFooter() {
+    let ms = Date.now() - startTime;
+    let s = Math.floor(ms / 1000);
+    let str = "";
+    if (s < 60) str = s + "秒";
+    else {
+        let m = Math.floor(s / 60); s = s % 60;
+        if (m < 60) str = m + "分 " + s + "秒";
+        else {
+            let h = Math.floor(m / 60); m = m % 60;
+            str = h + "小时 " + m + "分";
+        }
+    }
+    document.getElementById('valUptime').innerText = str;
+}

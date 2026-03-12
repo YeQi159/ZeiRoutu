@@ -3,84 +3,158 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32-S3 蓝牙监控端</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>厨房智能助手</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
 </head>
 
 <body>
-    <div class="container">
-        <header>
-            <h1>ESP32-S3 设备连接</h1>
-            <p>基于 Web Bluetooth API 的设备监控面板</p>
+    <!-- 登录界面 -->
+    <div id="loginScreen" class="overlay">
+        <div class="apple-modal">
+            <h2>🍳 厨房智能助手</h2>
+            <p class="subtitle">选择通信方式以连接控制终端</p>
+
+            <button id="loginBtnBle" class="apple-btn-primary" style="margin-bottom: 12px; background: #3b82f6;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+                    style="vertical-align: sub; margin-right: 4px;">
+                    <path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11" />
+                </svg>
+                蓝牙直连 (BLE)
+            </button>
+            <button id="loginBtnWifi" class="apple-btn-primary" style="background: #22c55e;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+                    style="vertical-align: sub; margin-right: 4px;">
+                    <path
+                        d="M5 12.55a11 11 0 0 1 14.08 0 M1.42 9a16 16 0 0 1 21.16 0 M8.53 16.11a6 6 0 0 1 6.95 0 M12 20h.01" />
+                </svg>
+                局域网直连 (Wi-Fi)
+            </button>
+            <div id="loginErr" class="err-msg">连接失败，请检查网络或蓝牙状态</div>
+        </div>
+    </div>
+
+    <!-- 主程序 -->
+    <div id="mainScreen" class="container hidden">
+        <header class="header">
+            <div class="title-area">
+                <h1>厨房智能助手</h1>
+                <p>厨房环境安全监控</p>
+            </div>
+            <div class="status-badge offline" id="statusBadge">
+                <div class="dot"></div>
+                <span id="statusText">连接中</span>
+            </div>
         </header>
 
-        <main>
-            <section class="card connection-panel">
-                <h2>设备连接</h2>
-                <div class="input-group">
-                    <label for="deviceName">设备名称过滤 (可选):</label>
-                    <input type="text" id="deviceName" placeholder="例如: My_Device 或留空">
+        <main class="grid">
+            <!-- 温度 -->
+            <div class="card">
+                <div class="icon-wrap bg-temp">
+                    <svg viewBox="0 0 24 24" class="icon c-temp" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" />
+                    </svg>
                 </div>
-                <div class="input-group">
-                    <label for="serviceUuid">服务 UUID:</label>
-                    <input type="text" id="serviceUuid" placeholder="例如: 180F 或完整 UUID">
+                <div class="value-row">
+                    <span class="value" id="valTemp">--</span><span class="unit">℃</span>
                 </div>
-                <div class="input-group">
-                    <label for="charUuid">特征值 UUID:</label>
-                    <input type="text" id="charUuid" placeholder="例如: 2A19 或完整 UUID">
+                <div class="label">环境温度</div>
+                <div class="bar-wrap">
+                    <div class="bar bg-temp-solid" id="barTemp"></div>
                 </div>
-                <div class="actions">
-                    <button id="connectBtn" class="btn primary">连接设备</button>
-                    <button id="disconnectBtn" class="btn secondary" disabled>断开连接</button>
-                </div>
-                <div id="status" class="status-msg">未连接</div>
-            </section>
+            </div>
 
-            <section class="card data-panel">
-                <h2>数据监控</h2>
-                <div class="data-display">
-                    <div class="data-item">
-                        <span class="label">接收数据:</span>
-                        <span id="receivedData" class="value">-</span>
-                    </div>
+            <!-- 湿度 -->
+            <div class="card">
+                <div class="icon-wrap bg-humi">
+                    <svg viewBox="0 0 24 24" class="icon c-humi" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+                    </svg>
                 </div>
-                <div class="actions">
-                    <button id="readBtn" class="btn" disabled>读取数据</button>
-                    <button id="notifyBtn" class="btn" disabled>开启/关闭通知</button>
+                <div class="value-row">
+                    <span class="value" id="valHumi">--</span><span class="unit">%</span>
                 </div>
-            </section>
+                <div class="label">空气湿度</div>
+                <div class="bar-wrap">
+                    <div class="bar bg-humi-solid" id="barHumi"></div>
+                </div>
+            </div>
 
-            <section class="card write-panel">
-                <h2>发送数据</h2>
-                <div class="input-group">
-                    <input type="text" id="sendDataInput" placeholder="输入要发送的数据(十六进制或字符串)">
+            <!-- 天然气/烟雾 (MQ-2) -->
+            <div class="card">
+                <div class="icon-wrap bg-light" style="background:#fef9c3; color:#eab308;">
+                    <svg viewBox="0 0 24 24" class="icon" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path
+                            d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
+                    </svg>
                 </div>
-                <div class="radio-group">
-                    <label><input type="radio" name="dataType" value="string" checked> 字符串</label>
-                    <label><input type="radio" name="dataType" value="hex"> 十六进制</label>
+                <div class="value-row">
+                    <span class="value" id="valGas">--</span><span class="unit">ppm</span>
                 </div>
-                <div class="actions">
-                    <button id="sendBtn" class="btn" disabled>发送数据</button>
+                <div class="label">天然气/烟雾浓度</div>
+                <div class="bar-wrap">
+                    <div class="bar" id="barGas" style="background:#eab308;"></div>
                 </div>
-            </section>
+            </div>
 
-            <section class="card log-panel">
-                <h2>操作日志</h2>
-                <div id="logArea" class="log-area"></div>
-            </section>
+            <!-- 人体红外 -->
+            <div class="card">
+                <div class="icon-wrap bg-soil" style="background:#e0e7ff; color:#4f46e5;">
+                    <svg viewBox="0 0 24 24" class="icon" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="5" r="2" />
+                        <path d="m10 9-1 15m5-15 1 15M10 9l3-4 3 4m-6 3-4 3m10-3 4 3" />
+                    </svg>
+                </div>
+                <div class="value-row">
+                    <span class="value" id="valIR" style="font-size: 26px;">无人</span><span class="unit"></span>
+                </div>
+                <div class="label">红外人体感应</div>
+                <div class="bar-wrap">
+                    <div class="bar" id="barIR" style="background:#4f46e5; width:0%;"></div>
+                </div>
+            </div>
         </main>
+
+        <section class="controls">
+            <!-- 继电器状态栏 -->
+            <div class="card" style="padding: 1rem; margin-bottom: 1rem;">
+                <h3 style="margin-bottom: 1rem;">🔧 执行与报警状态</h3>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
+                    <span>🚨 本地声光报警</span>
+                    <button class="toggle-btn" id="btnBuzzer" data-state="0">关闭</button>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
+                    <span>🪟 舵机 (开关窗)</span>
+                    <button class="toggle-btn" id="btnServo" data-state="0">关闭</button>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🌀 电动马达 (通风)</span>
+                    <button class="toggle-btn" id="btnMotor" data-state="0">关闭</button>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            App 运行时长: <span id="valUptime">0</span> | 数据包: <span id="valCount">0</span>
+        </footer>
     </div>
 
     <script src="app.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').then(registration => {
-                    console.log('ServiceWorker 注册成功:', registration.scope);
-                }).catch(error => {
-                    console.log('ServiceWorker 注册失败:', error);
+                navigator.serviceWorker.register('sw.js').then(reg => {
+                    console.log('SW 注册成功', reg.scope);
+                }).catch(err => {
+                    console.log('SW 注册失败', err);
                 });
             });
         }
